@@ -8,12 +8,11 @@ import Text.Parsec.String (Parser)
 
 data AST = IntegerExpr Integer
                 | BooleanExpr Bool
-                | CharacterExpr Char
                 | StringExpr String
                 | SymbolExpr String
                 | Empty -- i.e. the empty list
                 | SExpr AST AST
-  deriving (Show, Eq)
+  deriving (Eq, Show)
 
 lexeme :: Parser a -> Parser a
 lexeme p = P.spaces >> p
@@ -41,17 +40,20 @@ symbolP = lexeme $ peculiarP <|> do
     where initialP = P.oneOf "!$%&*/:<=>?^_~" <|> P.letter
           peculiarP = SymbolExpr <$> P.choice [P.string "+", P.string "-", P.string "..."]
 
-sexpP :: Parser AST
-sexpP = do
-  P.char '('
+-- helper function to create lists
+consify :: [AST] -> AST
+consify [] = Empty
+consify (x:xs) = SExpr x $ consify xs
+
+listP :: Parser AST
+listP = do
+  lexeme $ P.char '('
   exprs <- P.many exprP
-  P.char ')'
+  lexeme $ P.char ')'
   return $ consify $ exprs
-    where consify [] = Empty
-          consify (x:xs) = SExpr x $ consify xs
 
 exprP :: Parser AST
-exprP = P.choice $ map P.try [intP, symbolP, boolP, sexpP]
+exprP = P.choice $ map P.try [intP, symbolP, boolP, listP]
 
 main :: IO ()
 main = loop "> "

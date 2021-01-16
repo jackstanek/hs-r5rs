@@ -5,6 +5,7 @@ import Data.Either (fromRight)
 
 import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
+import System.Console.Haskeline
 
 data AST = IntegerExpr Integer
                 | BooleanExpr Bool
@@ -19,7 +20,9 @@ commentP = P.skipMany $ do
   P.manyTill P.anyChar P.newline
   return ()
 
-ignored = P.spaces <|> commentP
+spaces1P = P.skipMany1 P.space
+
+ignored = spaces1P <|> commentP
 
 lexeme :: Parser a -> Parser a
 lexeme p = ignored >> p
@@ -80,9 +83,15 @@ exprP :: Parser AST
 exprP = P.choice $ map P.try [intP, symbolP, boolP, listP, pairP]
 
 main :: IO ()
-main = loop "> "
-  where loop prompt = do {
-    input <- getLine;
-    putStrLn . show $ P.parse exprP "" input;
-    loop prompt
-  }
+main = runInputT defaultSettings newLoop
+  where loop :: String -> InputT IO ()
+        loop prevInput = do
+          minput <- getInputLine $ if null prevInput then ">>> " else "... "
+          case minput of
+            Nothing -> return ()
+            Just input -> let inputSoFar = prevInput ++ input in
+                          case P.parse exprP "stdin" inputSoFar of
+                            Right result -> do outputStrLn $ show $ P.parse exprP "stdin" inputSoFar
+                                               newLoop
+                            Left _ -> loop inputSoFar
+        newLoop = loop ""

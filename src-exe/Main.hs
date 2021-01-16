@@ -14,9 +14,17 @@ data AST = IntegerExpr Integer
                 | SExpr AST AST
   deriving (Eq, Show)
 
-lexeme :: Parser a -> Parser a
-lexeme p = P.spaces >> p
+commentP = P.skipMany $ do
+  P.char ';'
+  P.manyTill P.anyChar P.newline
+  return ()
 
+ignored = P.spaces <|> commentP
+
+lexeme :: Parser a -> Parser a
+lexeme p = ignored >> p
+
+-- Parse boolean literals ("#t" and "#f")
 boolP :: Parser AST
 boolP = lexeme $ do
   P.char '#'
@@ -32,6 +40,7 @@ intP = lexeme $ do
                               Just '-' -> -1
                               otherwise -> 1
 
+-- Parse symbols (referred to as identifiers in the spec)
 symbolP :: Parser AST
 symbolP = lexeme $ peculiarP <|> do
   initial <- initialP
@@ -41,19 +50,34 @@ symbolP = lexeme $ peculiarP <|> do
           peculiarP = SymbolExpr <$> P.choice [P.string "+", P.string "-", P.string "..."]
 
 -- helper function to create lists
-consify :: [AST] -> AST
-consify [] = Empty
-consify (x:xs) = SExpr x $ consify xs
+consify :: AST -> [AST] -> AST
+consify last [] = last
+consify last (x:xs) = SExpr x $ consify last xs
+buildList = consify Empty
 
+-- Simple parsers for parentheses
+lparen = lexeme $ P.char '('
+rparen = lexeme $ P.char ')'
+
+-- Parser for simple list notation
 listP :: Parser AST
 listP = do
-  lexeme $ P.char '('
+  lparen
   exprs <- P.many exprP
-  lexeme $ P.char ')'
-  return $ consify $ exprs
+  rparen
+  return $ buildList $ exprs
+
+-- Parser for pairs (e.g. "(1 . 2)")
+pairP = do
+  lparen
+  frontExprs <- P.many1 exprP
+  lexeme $ P.char '.'
+  lastExpr <- exprP
+  rparen
+  return $ consify lastExpr frontExprs
 
 exprP :: Parser AST
-exprP = P.choice $ map P.try [intP, symbolP, boolP, listP]
+exprP = P.choice $ map P.try [intP, symbolP, boolP, listP, pairP]
 
 main :: IO ()
 main = loop "> "

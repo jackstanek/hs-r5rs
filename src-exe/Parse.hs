@@ -77,7 +77,12 @@ pairP = do
   return $ consify lastExpr frontExprs
 
 exprP :: Parser AST
-exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, pairP]
+exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, pairP, quotedP]
+
+quotedP = do
+  P.char '\''
+  quoted <- exprP
+  return $ SExpr (SymbolExpr "quote") quoted
 
 programP = P.many1 $ lexeme $ exprP
 

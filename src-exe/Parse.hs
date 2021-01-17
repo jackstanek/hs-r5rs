@@ -1,4 +1,4 @@
-module Parse (AST, parseExpr) where
+module Parse (AST, IntegerExpr, BooleanExpr, StringExpr, SymbolExpr, Empty, SExpr, parseProgram) where
 
 import Control.Applicative
 
@@ -6,15 +6,21 @@ import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
 
 data AST = IntegerExpr Integer
-                | BooleanExpr Bool
-                | StringExpr String
-                | SymbolExpr String
-                | Empty -- i.e. the empty list
-                | SExpr AST AST
+         | BooleanExpr Bool
+         | StringExpr String
+         | SymbolExpr String
+         | Empty -- i.e. the empty list
+         | SExpr AST AST
   deriving (Eq, Show)
 
+comment = do
+  P.string ";"
+  P.many $ P.noneOf "\n"
+
+ignored = P.many $ P.choice [comment, P.many1 P.space]
+
 lexeme :: Parser a -> Parser a
-lexeme p = P.spaces *> p
+lexeme p = ignored *> p <* ignored
 
 -- Parse boolean literals ("#t" and "#f")
 boolP :: Parser AST
@@ -84,6 +90,6 @@ quotedP = do
   quoted <- exprP
   return $ SExpr (SymbolExpr "quote") quoted
 
-programP = P.many1 $ lexeme $ exprP
+programP = P.sepBy1 exprP ignored
 
-parseExpr = P.parse exprP
+parseProgram = P.parse programP

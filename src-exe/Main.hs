@@ -1,6 +1,6 @@
 module Main where
 
-import Parse (parseExpr)
+import Parse (parseProgram)
 
 import System.Console.Haskeline
 
@@ -12,7 +12,7 @@ main = runInputT defaultSettings newLoop
           case minput of
             Nothing -> return ()
             Just input -> let inputSoFar = prevInput ++ input in
-                          case (parseExpr "stdin" inputSoFar, input) of
+                          case (parseProgram "stdin" inputSoFar, input) of
                             (Right result, _) -> do outputStrLn $ show result
                                                     newLoop
                             (Left err, "") -> do outputStrLn $ show err

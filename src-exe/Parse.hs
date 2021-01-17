@@ -14,12 +14,7 @@ data AST = IntegerExpr Integer
   deriving (Eq, Show)
 
 lexeme :: Parser a -> Parser a
-lexeme p = ignorable *> p
-  where ignorable = P.spaces <|> comments
-        comments = do P.string ";"
-                      P.many $ P.noneOf "\n"
-                      P.newline
-                      return ()
+lexeme p = P.spaces *> p
 
 -- Parse boolean literals ("#t" and "#f")
 boolP :: Parser AST

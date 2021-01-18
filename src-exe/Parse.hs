@@ -1,4 +1,4 @@
-module Parse (AST, IntegerExpr, BooleanExpr, StringExpr, SymbolExpr, Empty, SExpr, parseProgram) where
+module Parse (AST (..), parseProgram) where
 
 import Control.Applicative
 
@@ -11,7 +11,18 @@ data AST = IntegerExpr Integer
          | SymbolExpr String
          | Empty -- i.e. the empty list
          | SExpr AST AST
-  deriving (Eq, Show)
+  deriving Eq
+
+instance Show AST where
+  show (IntegerExpr i) = show i
+  show (StringExpr s) = "\"" ++ s ++ "\""
+  show (SymbolExpr s) = s
+  show (BooleanExpr b) = if b then "#t" else "#f"
+  show (Empty) = "()"
+  show (SExpr first rest) = "(" ++ show first ++ " " ++ showRest rest ++ ")"
+    where showRest (SExpr next Empty) = show next
+          showRest (SExpr next rest) = show next ++ " " ++ showRest rest
+          showRest other = ". " ++ show other
 
 comment = do
   P.string ";"
@@ -88,8 +99,8 @@ exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, pairP, quote
 quotedP = do
   P.char '\''
   quoted <- exprP
-  return $ SExpr (SymbolExpr "quote") quoted
+  return $ SExpr (SymbolExpr "quote") (SExpr quoted Empty)
 
 programP = P.sepBy1 exprP ignored
 
-parseProgram = P.parse programP
+parseProgram = P.parse exprP

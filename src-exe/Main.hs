@@ -1,6 +1,6 @@
 module Main where
 
-import Eval (execute)
+import Eval
 import Parse (parseProgram)
 
 import System.Console.Haskeline
@@ -11,17 +11,17 @@ mapLeft f e = case e of
   Right a -> Right a
 
 main :: IO ()
-main = runInputT defaultSettings newLoop
-  where loop :: String -> InputT IO ()
-        loop prevInput = do
+main = runInputT defaultSettings $ newLoop topLevel
+  where loop :: String -> EvalContext -> InputT IO ()
+        loop prevInput env = do
           minput <- getInputLine $ if null prevInput then ">>> " else "... "
           case minput of
             Nothing -> return ()
             Just input -> let inputSoFar = prevInput ++ input in
-                          case (mapLeft show (parseProgram "stdin" inputSoFar) >>= execute, input) of
-                            (Right result, _) -> do outputStrLn $ show $ result
-                                                    newLoop
+                          case ((mapLeft show $ parseProgram "stdin" inputSoFar) >>= execute env, input) of
+                            (Right (newenv, result), _) -> do outputStrLn . show $ result
+                                                              newLoop newenv
                             (Left err, "") -> do outputStrLn err
-                                                 newLoop
-                            (Left _, _) -> loop $ inputSoFar ++ "\n"
+                                                 newLoop env
+                            (Left _, _) -> loop (inputSoFar ++ "\n") env
         newLoop = loop ""

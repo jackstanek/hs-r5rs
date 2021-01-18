@@ -1,4 +1,4 @@
-module Eval (astToEval, execute) where
+module Eval (astToEval, execute, evaluate, EvalContext, topLevel) where
 
 import qualified Data.Map.Lazy as Map
 import Data.Maybe (maybe)
@@ -13,7 +13,6 @@ data Evaluation = SelfEvaluating AST
   deriving Show
 
 type EvalContext = Map.Map String Evaluation
-type Program = (Evaluation, EvalContext)
 type EvalError = String
 
 astToEval :: AST -> Either EvalError Evaluation
@@ -21,17 +20,18 @@ astToEval ast = case ast of
   SymbolExpr s -> Right $ VariableRef s
   otherwise -> Right $ SelfEvaluating ast
 
-evaluate :: Program -> Either EvalError AST
-evaluate (eval, env) = case eval of
-  VariableRef vname -> varLookup vname
-  SelfEvaluating val -> Right val
+evaluateVarLookup :: EvalContext -> String -> Either EvalError (EvalContext, AST)
+evaluateVarLookup env vname = case Map.lookup vname env of
+  Just val -> evaluate env val
+  Nothing -> Left $ "unbound variable: " ++ vname
+
+evaluate :: EvalContext -> Evaluation -> Either EvalError (EvalContext, AST)
+evaluate env eval = case eval of
+  VariableRef vname -> evaluateVarLookup env vname
+  SelfEvaluating val -> Right (env, val)
   a -> Left $ "not implemented: " ++ show a
-  where varLookup vname = case Map.lookup vname env of
-                            Just val -> evaluate (val, env)
-                            Nothing -> Left $ "unbound variable: " ++ vname
 
-topLevel = Map.fromList [("x", SelfEvaluating $ IntegerExpr 69)]
+execute :: EvalContext -> AST -> Either EvalError (EvalContext, AST)
+execute env ast = astToEval ast >>= evaluate env
 
--- Top level execution
-execute :: AST -> Either EvalError AST
-execute input = astToEval input >>= \eval -> evaluate (eval, topLevel)
+topLevel = Map.empty

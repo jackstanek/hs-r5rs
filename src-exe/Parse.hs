@@ -1,6 +1,7 @@
 module Parse (Sexp (..), parseProgram) where
 
 import Control.Applicative
+import Data.List (intersperse)
 
 import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
@@ -9,8 +10,7 @@ data Sexp = IntegerExpr Integer
           | BooleanExpr Bool
           | StringExpr String
           | SymbolExpr String
-          | Empty -- i.e. the empty list
-          | SExpr Sexp Sexp
+          | SExpr [Sexp]
   deriving Eq
 
 instance Show Sexp where
@@ -18,11 +18,7 @@ instance Show Sexp where
   show (StringExpr s) = "\"" ++ s ++ "\""
   show (SymbolExpr s) = s
   show (BooleanExpr b) = if b then "#t" else "#f"
-  show (Empty) = "()"
-  show (SExpr first rest) = "(" ++ show first ++ " " ++ showRest rest ++ ")"
-    where showRest (SExpr next Empty) = show next
-          showRest (SExpr next rest) = show next ++ " " ++ showRest rest
-          showRest other = ". " ++ show other
+  show (SExpr exprs) = "(" ++ (concat $ intersperse " " $ map show exprs) ++ ")"
 
 comment = do
   P.string ";"
@@ -66,12 +62,6 @@ symbolP = lexeme $ peculiarP <|> do
     where initialP = P.oneOf "!$%&*/:<=>?^_~" <|> P.letter
           peculiarP = SymbolExpr <$> P.choice [P.string "+", P.string "-", P.string "..."]
 
--- helper function to create lists
-consify :: Sexp -> [Sexp] -> Sexp
-consify last [] = last
-consify last (x:xs) = SExpr x $ consify last xs
-buildList = consify Empty
-
 -- Simple parsers for parentheses
 lparen = lexeme $ P.char '('
 rparen = lexeme $ P.char ')'
@@ -82,7 +72,7 @@ listP = do
   lparen
   exprs <- P.many exprP
   rparen
-  return $ buildList $ exprs
+  return $ SExpr exprs
 
 -- Parser for pairs (e.g. "(1 . 2)")
 pairP = do
@@ -91,7 +81,7 @@ pairP = do
   lexeme $ P.char '.'
   lastExpr <- exprP
   rparen
-  return $ consify lastExpr frontExprs
+  return $ SExpr (lastExpr:frontExprs)
 
 exprP :: Parser Sexp
 exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, pairP, quotedP]
@@ -99,7 +89,7 @@ exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, pairP, quote
 quotedP = do
   P.char '\''
   quoted <- exprP
-  return $ SExpr (SymbolExpr "quote") (SExpr quoted Empty)
+  return $ SExpr [SymbolExpr "quote", quoted]
 
 programP = P.sepBy1 exprP ignored
 

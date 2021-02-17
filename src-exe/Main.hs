@@ -19,7 +19,7 @@ main = runInputT defaultSettings newLoop
           case minput of
             Nothing -> return ()
             Just input -> let inputSoFar = prevInput ++ input in
-                          case ((mapLeft show $ parseProgram "stdin" inputSoFar) >>= sexpToAst, input) of
+                          case (mapLeft show (parseProgram "stdin" inputSoFar) >>= sexpToAst >>= evalAST, input) of
                             (Right result, _) -> do outputStrLn . show $ result
                                                     newLoop
                             (Left err, "") -> do outputStrLn err

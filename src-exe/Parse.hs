@@ -18,7 +18,7 @@ instance Show Sexp where
   show (StringExpr s) = "\"" ++ s ++ "\""
   show (SymbolExpr s) = s
   show (BooleanExpr b) = if b then "#t" else "#f"
-  show (SExpr exprs) = "(" ++ (concat $ intersperse " " $ map show exprs) ++ ")"
+  show (SExpr exprs) = "(" ++ unwords (map show exprs) ++ ")"
 
 comment = do
   P.string ";"

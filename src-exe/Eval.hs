@@ -1,37 +1,40 @@
-module Eval (astToEval, execute) where
+module Eval (runExpr, evalProgram, SymbolTable) where
 
 import qualified Data.Map.Lazy as Map
-import Data.Maybe (maybe)
+import Control.Monad
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.State.Lazy
 
+import Error
 import Parse
 
-data Evaluation = SelfEvaluating AST
-                | VariableRef String
-                | Lambda [String] [Evaluation]
-                | Let [(String, Evaluation)]
-                | ProcCall Evaluation [Evaluation]
-  deriving Show
+success = lift . Right
+failure = lift . Left
 
-type EvalContext = Map.Map String Evaluation
-type Program = (Evaluation, EvalContext)
-type EvalError = String
+type SymbolTable = (Map.Map String Expr)
 
-astToEval :: AST -> Either EvalError Evaluation
-astToEval ast = case ast of
-  SymbolExpr s -> Right $ VariableRef s
-  otherwise -> Right $ SelfEvaluating ast
+evaluate :: Expr -> StateT SymbolTable ThrowsError Expr
+evaluate val@(IntegerExpr _) = success val
+evaluate val@(BooleanExpr _) = success val
+evaluate val@(StringExpr _)  = success val
+evaluate (ListExpr [SymbolExpr "quote", val]) = success val
+evaluate (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) = do
+  finalVal <- evaluate rval
+  modify (Map.insert lval rval)
+  return rval
+evaluate (ListExpr (fn : args)) = do
+  fnObj <- evaluate fn
+  argsObjs <- traverse evaluate args
+  return fnObj -- TODO: actually apply the function!
+evaluate e@(SymbolExpr var) = do
+  env <- get
+  case Map.lookup var env of
+    Just val -> success val
+    Nothing -> failure (UnboundVariable e)
 
-evaluate :: Program -> Either EvalError AST
-evaluate (eval, env) = case eval of
-  VariableRef vname -> varLookup vname
-  SelfEvaluating val -> Right val
-  a -> Left $ "not implemented: " ++ show a
-  where varLookup vname = case Map.lookup vname env of
-                            Just val -> evaluate (val, env)
-                            Nothing -> Left $ "unbound variable: " ++ vname
+runExpr :: Expr -> ThrowsError (Expr, SymbolTable)
+runExpr program = runStateT (evaluate program) Map.empty
 
-topLevel = Map.fromList [("x", SelfEvaluating $ IntegerExpr 69)]
-
--- Top level execution
-execute :: AST -> Either EvalError AST
-execute input = astToEval input >>= \eval -> evaluate (eval, topLevel)
+evalProgram :: [Expr] -> ThrowsError Expr
+evalProgram exprs = evalStateT (last <$> results) Map.empty
+  where results = mapM evaluate exprs

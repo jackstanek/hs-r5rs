@@ -1,24 +1,13 @@
-module Parse (Sexp (..), parseProgram) where
+module Parse (Expr (..), parseProgram) where
 
 import Control.Applicative
-import Data.List (intersperse)
 
 import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
+import Text.Parsec.Pos
 
-data Sexp = IntegerExpr Integer
-          | BooleanExpr Bool
-          | StringExpr String
-          | SymbolExpr String
-          | SExpr [Sexp]
-  deriving Eq
-
-instance Show Sexp where
-  show (IntegerExpr i) = show i
-  show (StringExpr s) = "\"" ++ s ++ "\""
-  show (SymbolExpr s) = s
-  show (BooleanExpr b) = if b then "#t" else "#f"
-  show (SExpr exprs) = "(" ++ unwords (map show exprs) ++ ")"
+import Error
+import Expr
 
 comment = do
   P.string ";"
@@ -30,31 +19,31 @@ lexeme :: Parser a -> Parser a
 lexeme p = ignored *> p <* ignored
 
 -- Parse boolean literals ("#t" and "#f")
-boolP :: Parser Sexp
+boolP :: Parser Expr
 boolP = lexeme $ do
   P.char '#'
   value <- P.oneOf "tf"
   return $ BooleanExpr (value == 't')
 
-intP :: Parser Sexp
+intP :: Parser Expr
 intP = lexeme $ do
   sign <- P.optionMaybe $ P.oneOf "+-"
   value <- P.many1 P.digit
-  return $ IntegerExpr $ multiplier sign * (read value)
+  return $ IntegerExpr $ multiplier sign * read value
     where multiplier sign = case sign of
                               Just '-' -> -1
-                              otherwise -> 1
+                              _        -> 1
 
 -- Parse string literals
-stringP :: Parser Sexp
+stringP :: Parser Expr
 stringP = lexeme $ do
   P.char '\"'
   contents <- P.many $ P.noneOf "\""
   P.char '\"'
-  return $ StringExpr $ contents
+  return (StringExpr contents)
 
 -- Parse symbols (referred to as identifiers in the spec)
-symbolP :: Parser Sexp
+symbolP :: Parser Expr
 symbolP = lexeme $ peculiarP <|> do
   initial <- initialP
   subsequent <- P.many $ P.choice [initialP, P.digit, P.oneOf "+-.@"]
@@ -66,31 +55,27 @@ symbolP = lexeme $ peculiarP <|> do
 lparen = lexeme $ P.char '('
 rparen = lexeme $ P.char ')'
 
+-- Parser for 
+
 -- Parser for simple list notation
-listP :: Parser Sexp
+listP :: Parser Expr
 listP = do
   lparen
   exprs <- P.many exprP
   rparen
-  return $ SExpr exprs
+  return (ListExpr exprs)
 
--- Parser for pairs (e.g. "(1 . 2)")
-pairP = do
-  lparen
-  frontExprs <- P.many1 exprP
-  lexeme $ P.char '.'
-  lastExpr <- exprP
-  rparen
-  return $ SExpr (lastExpr:frontExprs)
-
-exprP :: Parser Sexp
-exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, pairP, quotedP]
+exprP :: Parser Expr
+exprP = P.choice $ map P.try [intP, stringP, symbolP, boolP, listP, quotedP]
 
 quotedP = do
   P.char '\''
   quoted <- exprP
-  return $ SExpr [SymbolExpr "quote", quoted]
+  return $ ListExpr [SymbolExpr "quote", quoted]
 
 programP = P.sepBy1 exprP ignored
 
-parseProgram = P.parse exprP
+parseProgram :: Text.Parsec.Pos.SourceName -> String -> ThrowsError [Expr]
+parseProgram source input = case P.parse programP source input of
+  Left err -> Left (ParserError err)
+  Right result -> Right result

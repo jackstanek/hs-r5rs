@@ -79,4 +79,3 @@ parseProgram :: Text.Parsec.Pos.SourceName -> String -> ThrowsError [Expr]
 parseProgram source input = case P.parse programP source input of
   Left err -> Left (ParserError err)
   Right result -> Right result
-

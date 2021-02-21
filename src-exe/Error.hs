@@ -1,4 +1,6 @@
-module Error (LispError (..), ThrowsError) where
+module Error (LispError (..), ThrowsError, IOThrowsError, ioThrowError) where
+
+import Control.Monad.Except
 
 import Text.Parsec (ParseError)
 
@@ -20,3 +22,8 @@ instance Show LispError where
   show (UnboundVariable v) = "unbound variable: " ++ show v
 
 type ThrowsError = Either LispError
+type IOThrowsError = ExceptT LispError IO
+
+ioThrowError :: ThrowsError a -> IOThrowsError a
+ioThrowError (Left e) = throwError e
+ioThrowError (Right v) = return v

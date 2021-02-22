@@ -1,6 +1,7 @@
-module Parse (Expr (..), parseProgram) where
+module Parse (Expr (..), parseExpr, parseProgram) where
 
 import Control.Applicative
+import Control.Monad.Except
 
 import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
@@ -75,7 +76,13 @@ quotedP = do
 
 programP = P.sepBy1 exprP ignored
 
+liftParser :: Parser a -> Text.Parsec.Pos.SourceName -> String -> ThrowsError a
+liftParser parser source input = either (throwError . ParserError)
+                                        return
+                                        (P.parse parser source input)
+
+parseExpr :: Text.Parsec.Pos.SourceName -> String -> ThrowsError Expr
+parseExpr = liftParser exprP
+
 parseProgram :: Text.Parsec.Pos.SourceName -> String -> ThrowsError [Expr]
-parseProgram source input = case P.parse programP source input of
-  Left err -> Left (ParserError err)
-  Right result -> Right result
+parseProgram = liftParser programP

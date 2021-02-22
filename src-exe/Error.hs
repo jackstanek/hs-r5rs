@@ -1,4 +1,4 @@
-module Error (LispError (..), ThrowsError, IOThrowsError, ioThrowError) where
+module Error (LispError (..), ThrowsError, IOThrowsError, liftIOThrow, runIOThrows) where
 
 import Control.Monad.Except
 
@@ -10,20 +10,27 @@ data LispError = TypeError String Expr
                | ParserError ParseError
                | FunctionArity Integer [Expr]
                | NotCallable Expr
-               | BadSpecialForm String Expr
-               | UnboundVariable Expr
+               | BadSpecialForm Expr
+               | UnboundVariable String
 
 instance Show LispError where
   show (TypeError t e) = "expected type " ++ t ++ ", got " ++ show e
   show (ParserError pe) = show pe
   show (FunctionArity n exprs) = "function expected " ++ show n ++ " arguments, but got: " ++ unwords (fmap show exprs)
   show (NotCallable e) = show e ++ " is not callable"
-  show (BadSpecialForm m e) = m ++ ": " ++ show e
-  show (UnboundVariable v) = "unbound variable: " ++ show v
+  show (BadSpecialForm e) = "bad special form: " ++ show e
+  show (UnboundVariable v) = "unbound variable: " ++ v
 
 type ThrowsError = Either LispError
 type IOThrowsError = ExceptT LispError IO
 
-ioThrowError :: ThrowsError a -> IOThrowsError a
-ioThrowError (Left e) = throwError e
-ioThrowError (Right v) = return v
+liftIOThrow :: ThrowsError a -> IOThrowsError a
+liftIOThrow (Left e) = throwError e
+liftIOThrow (Right v) = return v
+
+trapError = flip catchError (return . show)
+extractValue (Right val) = val
+
+
+runIOThrows :: IOThrowsError String -> IO String
+runIOThrows action = runExceptT (trapError action) >>= return . extractValue

@@ -14,4 +14,3 @@ instance Show Expr where
   show (BooleanExpr b) = if b then "#t" else "#f"
   show (ListExpr exprs) = "(" ++ unwords (fmap show exprs) ++ ")"
   show (LambdaExpr _) = "<function>"
-

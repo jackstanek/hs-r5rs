@@ -41,10 +41,32 @@ applyFn :: String -> [Expr] -> IOThrowsError Expr
 applyFn name args = maybe (throwError $ UnboundVariable name)
                           ($ args)
                           (Map.lookup name primitives)
-  where primitives = Map.fromList [("+", numericOp ((+), 0)),
-                                   ("*", numericOp ((*), 1))]
-        numericOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
-        numericOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
+  where primitives = Map.fromList [("+", ringOp ((+), 0)),
+                                   ("*", ringOp ((*), 1)),
+                                   ("-", diffQuot (-)),
+                                   ("/", diffQuot div),
+                                   ("if", ifElse)]
+        ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
+        ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
+
+        -- TODO: These implementations are not ~quite~ correct. See R5RS section 6.2.5
+        diffQuot :: (Integer -> Integer -> Integer) -> [Expr] -> IOThrowsError Expr
+        diffQuot op [] = throwError $ FunctionArity 1 []
+        diffQuot op (first:rest) = do first' <- extractInteger first
+                                      rest' <- mapM extractInteger rest
+                                      return $ IntegerExpr $ foldl' op first' rest'
+
+        -- TODO: Add parser support for "if" syntax. There is a slight semantic
+        -- difference in argument evaluation order. See R5RS section 4.1.5
+        ifElse :: [Expr] -> IOThrowsError Expr
+        ifElse [pred, t, f] = return $ if truthy pred
+                                         then t
+                                         else f
+        ifElse args         = throwError $ FunctionArity 3 args
+
+truthy :: Expr -> Bool
+truthy (BooleanExpr False) = False
+truthy _                   = True
 
 extractInteger :: Expr -> IOThrowsError Integer
 extractInteger (IntegerExpr i) = return i

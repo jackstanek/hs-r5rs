@@ -31,6 +31,6 @@ liftIOThrow (Right v) = return v
 trapError = flip catchError (return . show)
 extractValue (Right val) = val
 
-
+-- TODO: Partial function, gross!
 runIOThrows :: IOThrowsError String -> IO String
 runIOThrows action = runExceptT (trapError action) >>= return . extractValue

@@ -1,14 +1,22 @@
 module Main where
 
 import Control.Monad.Except
-import System.Environment
 
-import Parse
+import System.Console.Haskeline
+
 import Error
 import Eval
+import Parse
 
 main :: IO ()
-main = do args <- getArgs
-          case args of
-            [prog] -> runIOThrows (fmap show $ liftIOThrow (parseExpr "arg" prog) >>= evaluate) >>= putStrLn
-            _      -> putStrLn "need exactly one argument."
+main = runInputT defaultSettings (lift empty >>= loop)
+       where loop :: SymbolTable -> InputT IO ()
+             loop env = do
+                 minput <- getInputLine ">>> "
+                 case minput of
+                   Nothing -> return ()
+                   Just ":q" -> return ()
+                   Just input -> do result <- liftRun (fmap show $ liftIOThrow (parseExpr "arg" input) >>= evaluate env)
+                                    outputStrLn result
+                                    loop env
+             liftRun = lift . runIOThrows

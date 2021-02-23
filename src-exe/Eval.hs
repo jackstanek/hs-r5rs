@@ -20,6 +20,13 @@ evaluate _ val@(IntegerExpr _) = return val
 evaluate _ val@(StringExpr _) = return val
 evaluate _ val@(BooleanExpr _) = return val
 evaluate _ (ListExpr [SymbolExpr "quote", val]) = return val
+evaluate env (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) =
+    do r <- evaluate env rval
+       rref <- liftIO $ newIORef r
+       liftIO $ modifyIORef' env (Map.insert lval rref)
+       return r -- note: this behavior is unspecified and
+                -- implementation-specific.
+
 evaluate env (ListExpr (SymbolExpr fn : args)) = mapM (evaluate env) args >>= applyFn fn
 evaluate env (SymbolExpr var) = lookupVar env var
 evaluate _ bad = throwError $ BadSpecialForm bad

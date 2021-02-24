@@ -22,14 +22,32 @@ evaluate _ val@(BooleanExpr _) = return val
 evaluate _ (ListExpr [SymbolExpr "quote", val]) = return val
 evaluate env (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) =
     do r <- evaluate env rval
-       rref <- liftIO $ newIORef r
-       liftIO $ modifyIORef' env (Map.insert lval rref)
+       liftIO $ bindVar env lval rval
        return r -- note: this behavior is unspecified and
                 -- implementation-specific.
+evaluate env (ListExpr [SymbolExpr "set!", SymbolExpr lval, rval]) =
+    do r <- evaluate env rval
+       setVar env lval rval
+       return r
 
 evaluate env (ListExpr (SymbolExpr fn : args)) = mapM (evaluate env) args >>= applyFn fn
 evaluate env (SymbolExpr var) = lookupVar env var
 evaluate _ bad = throwError $ BadSpecialForm bad
+
+setVar :: SymbolTable -> String -> Expr -> IOThrowsError Expr
+setVar env name val = do env' <- liftIO $ readIORef env
+                         case Map.lookup name env' of
+                           Just existing -> do liftIO $ writeIORef existing val
+                                               return val
+                           Nothing -> throwError $ UnboundVariable name
+
+
+bindVar :: SymbolTable -> String -> Expr -> IO ()
+bindVar env name val = do varRef <- newIORef val
+                          modifyIORef' env (Map.insert name varRef)
+
+bindVars :: [(String, Expr)] -> SymbolTable -> IO ()
+bindVars bindings env = mapM_ (uncurry $ bindVar env) bindings
 
 lookupVar :: SymbolTable -> String -> IOThrowsError Expr
 lookupVar envRef var = do env <- liftIO $ readIORef envRef
@@ -56,7 +74,7 @@ applyFn name args = maybe (throwError $ UnboundVariable name)
                                       rest' <- mapM extractInteger rest
                                       return $ IntegerExpr $ foldl' op first' rest'
 
-        -- TODO: Add parser support for "if" syntax. There is a slight semantic
+        -- TODO: Add parser support for "if" symtax. There is a slight semantic
         -- difference in argument evaluation order. See R5RS section 4.1.5
         ifElse :: [Expr] -> IOThrowsError Expr
         ifElse [pred, t, f] = return $ if truthy pred

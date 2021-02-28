@@ -7,7 +7,6 @@ import qualified Text.Parsec as P
 import Text.Parsec.String (Parser)
 import Text.Parsec.Pos
 
-import Error
 import Expr
 
 comment = do

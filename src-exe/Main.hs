@@ -4,12 +4,12 @@ import Control.Monad.Except
 
 import System.Console.Haskeline
 
-import Error
 import Eval
+import Expr
 import Parse
 
 main :: IO ()
-main = runInputT defaultSettings (lift empty >>= loop)
+main = runInputT defaultSettings (lift emptyEnv >>= loop)
        where loop :: SymbolTable -> InputT IO ()
              loop env = do
                  minput <- getInputLine ">>> "

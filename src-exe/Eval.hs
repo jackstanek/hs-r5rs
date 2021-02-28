@@ -1,19 +1,43 @@
-module Eval (SymbolTable, evaluate, empty) where
+module Eval (SymbolTable, evaluate, emptyEnv) where
 
 import Control.Monad
 import Control.Monad.Except
 import Data.Functor
-import Data.List (foldl')
 import Data.IORef
-import qualified Data.Map.Lazy as Map
+import Data.List (foldl')
+import qualified Data.Map.Strict as Map
 
 import Expr
-import Error
 import Parse
 
-type SymbolTable = IORef (Map.Map String (IORef Expr))
-empty :: IO SymbolTable
-empty = newIORef Map.empty
+-- An environment containing only primitives.
+emptyEnv :: IO SymbolTable
+emptyEnv = do env <- newIORef Map.empty
+              bindVars (makePrimitiveFn <$> primitives) env
+              return env
+  where primitives = [("+", ringOp ((+), 0)),
+                      ("*", ringOp ((*), 1)),
+                      ("-", diffQuot (-)),
+                      ("/", diffQuot div),
+                      ("if", ifElse)]
+        makePrimitiveFn (name, fn) = (name, PrimitiveFn fn)
+        ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
+        ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
+
+        -- TODO: These implementations are not ~quite~ correct. See R5RS section 6.2.5
+        diffQuot :: (Integer -> Integer -> Integer) -> [Expr] -> IOThrowsError Expr
+        diffQuot op [] = throwError $ FunctionArity 1 []
+        diffQuot op (first:rest) = do first' <- extractInteger first
+                                      rest' <- mapM extractInteger rest
+                                      return $ IntegerExpr $ foldl' op first' rest'
+
+        -- TODO: Add parser support for "if" symtax. There is a slight semantic
+        -- difference in argument evaluation order. See R5RS section 4.1.5
+        ifElse :: [Expr] -> IOThrowsError Expr
+        ifElse [pred, t, f] = return $ if truthy pred
+                                         then t
+                                         else f
+        ifElse args         = throwError $ FunctionArity 3 args
 
 evaluate :: SymbolTable -> Expr -> IOThrowsError Expr
 evaluate _ val@(IntegerExpr _) = return val
@@ -30,8 +54,12 @@ evaluate env (ListExpr [SymbolExpr "set!", SymbolExpr lval, rval]) =
        setVar env lval rval
        return r
 
-evaluate env (ListExpr (SymbolExpr fn : args)) = mapM (evaluate env) args >>= applyFn fn
+evaluate env (ListExpr (fn : args)) = do evalArgs <- mapM (evaluate env) args
+                                         evalFn   <- evaluate env fn
+                                         applyFn evalFn evalArgs
 evaluate env (SymbolExpr var) = lookupVar env var
+evaluate _ lm@LambdaExpr{} = return lm
+evaluate _ prim@(PrimitiveFn _) = return prim
 evaluate _ bad = throwError $ BadSpecialForm bad
 
 setVar :: SymbolTable -> String -> Expr -> IOThrowsError Expr
@@ -55,32 +83,9 @@ lookupVar envRef var = do env <- liftIO $ readIORef envRef
                             Nothing -> liftIOThrow $ throwError $ UnboundVariable var
                             Just val -> liftIO . readIORef $ val
 
-applyFn :: String -> [Expr] -> IOThrowsError Expr
-applyFn name args = maybe (throwError $ UnboundVariable name)
-                          ($ args)
-                          (Map.lookup name primitives)
-  where primitives = Map.fromList [("+", ringOp ((+), 0)),
-                                   ("*", ringOp ((*), 1)),
-                                   ("-", diffQuot (-)),
-                                   ("/", diffQuot div),
-                                   ("if", ifElse)]
-        ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
-        ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
-
-        -- TODO: These implementations are not ~quite~ correct. See R5RS section 6.2.5
-        diffQuot :: (Integer -> Integer -> Integer) -> [Expr] -> IOThrowsError Expr
-        diffQuot op [] = throwError $ FunctionArity 1 []
-        diffQuot op (first:rest) = do first' <- extractInteger first
-                                      rest' <- mapM extractInteger rest
-                                      return $ IntegerExpr $ foldl' op first' rest'
-
-        -- TODO: Add parser support for "if" symtax. There is a slight semantic
-        -- difference in argument evaluation order. See R5RS section 4.1.5
-        ifElse :: [Expr] -> IOThrowsError Expr
-        ifElse [pred, t, f] = return $ if truthy pred
-                                         then t
-                                         else f
-        ifElse args         = throwError $ FunctionArity 3 args
+applyFn :: Expr -> [Expr] -> IOThrowsError Expr
+applyFn (PrimitiveFn fn) = fn
+applyFn notFn = const $ throwError $ NotCallable notFn
 
 truthy :: Expr -> Bool
 truthy (BooleanExpr False) = False

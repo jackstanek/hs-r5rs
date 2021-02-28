@@ -12,9 +12,9 @@ data Expr = IntegerExpr Integer
           | StringExpr String
           | SymbolExpr String
           | ListExpr [Expr]
-          | LambdaExpr {lmArgs :: [Expr], lmVarargs :: Maybe Expr,
+          | LambdaExpr {lmArgs :: [String], lmVarargs :: Maybe String,
                         lmBody :: [Expr], lmClosure :: SymbolTable }
-          | DottedList [Expr] [Expr]
+          | DottedList [Expr] Expr
           | PrimitiveFn ([Expr] -> IOThrowsError Expr)
 
 instance Show Expr where
@@ -24,7 +24,7 @@ instance Show Expr where
   show (BooleanExpr b) = if b then "#t" else "#f"
   show (ListExpr exprs) = "(" ++ unwords (fmap show exprs) ++ ")"
   show LambdaExpr{lmArgs=args, lmVarargs=varargs, lmBody=_, lmClosure=_} =
-    "(lambda (" ++ unwords (fmap show args) ++
+    "(lambda (" ++ unwords args ++
       (case varargs of
          Nothing -> ""
          Just v -> " . " ++ show v) ++
@@ -39,6 +39,8 @@ data LispError = TypeError String Expr
                | NotCallable Expr
                | BadSpecialForm Expr
                | UnboundVariable String
+               | DivideByZero
+               | EmptyProgram
 
 instance Show LispError where
   show (TypeError t e) = "expected type " ++ t ++ ", got " ++ show e
@@ -47,6 +49,8 @@ instance Show LispError where
   show (NotCallable e) = show e ++ " is not callable"
   show (BadSpecialForm e) = "bad special form: " ++ show e
   show (UnboundVariable v) = "unbound variable: " ++ v
+  show DivideByZero = "divide by zero"
+  show EmptyProgram = "empty program or function body"
 
 type ThrowsError = Either LispError
 type IOThrowsError = ExceptT LispError IO

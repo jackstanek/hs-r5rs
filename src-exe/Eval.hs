@@ -1,4 +1,4 @@
-module Eval (SymbolTable, evaluate, emptyEnv) where
+module Eval (SymbolTable, evaluate, evaluateSeq, primEnv) where
 
 import Control.Monad
 import Control.Monad.Except
@@ -11,10 +11,10 @@ import Expr
 import Parse
 
 -- An environment containing only primitives.
-emptyEnv :: IO SymbolTable
-emptyEnv = do env <- newIORef Map.empty
-              bindVars (makePrimitiveFn <$> primitives) env
-              return env
+primEnv :: IO SymbolTable
+primEnv = do env <- newIORef Map.empty
+             bindVars (makePrimitiveFn <$> primitives) env
+             return env
   where primitives = [("+", ringOp ((+), 0)),
                       ("*", ringOp ((*), 1)),
                       ("-", diffQuot (-)),
@@ -24,7 +24,8 @@ emptyEnv = do env <- newIORef Map.empty
         ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
         ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
 
-        -- TODO: These implementations are not ~quite~ correct. See R5RS section 6.2.5
+        -- TODO: These implementations are not ~quite~ correct. See R5RS section 6.2.5.
+        -- A proper implementation would require a rational type to be added.
         diffQuot :: (Integer -> Integer -> Integer) -> [Expr] -> IOThrowsError Expr
         diffQuot op [] = throwError $ FunctionArity 1 []
         diffQuot op (first:rest) = do first' <- extractInteger first
@@ -44,6 +45,16 @@ evaluate _ val@(IntegerExpr _) = return val
 evaluate _ val@(StringExpr _) = return val
 evaluate _ val@(BooleanExpr _) = return val
 evaluate _ (ListExpr [SymbolExpr "quote", val]) = return val
+evaluate env (ListExpr (SymbolExpr "lambda" : ListExpr argSyms : body)) =
+    do args <- mapM extractSymbol argSyms
+       return LambdaExpr{lmArgs=args, lmBody=body,
+                         lmVarargs=Nothing, lmClosure=env}
+evaluate env (ListExpr (SymbolExpr "define" : ListExpr (SymbolExpr fnname : argSyms) : body)) =
+    do args <- mapM extractSymbol argSyms
+       let lm = LambdaExpr{lmArgs=args, lmBody=body,
+                          lmVarargs=Nothing, lmClosure=env}
+       liftIO $ bindVar env fnname lm
+       return lm
 evaluate env (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) =
     do r <- evaluate env rval
        liftIO $ bindVar env lval rval
@@ -61,6 +72,14 @@ evaluate env (SymbolExpr var) = lookupVar env var
 evaluate _ lm@LambdaExpr{} = return lm
 evaluate _ prim@(PrimitiveFn _) = return prim
 evaluate _ bad = throwError $ BadSpecialForm bad
+
+-- Evaluate a sequence of expressions in the same environment
+evaluateSeq :: SymbolTable -> [Expr] -> IOThrowsError Expr
+evaluateSeq env exprs = mapM (evaluate env) exprs >>= extractLast
+  where extractLast :: [Expr] -> IOThrowsError Expr
+        extractLast [] = throwError EmptyProgram
+        extractLast [last] = return last
+        extractLast (_:rest) = extractLast rest
 
 setVar :: SymbolTable -> String -> Expr -> IOThrowsError Expr
 setVar env name val = do env' <- liftIO $ readIORef env
@@ -84,8 +103,14 @@ lookupVar envRef var = do env <- liftIO $ readIORef envRef
                             Just val -> liftIO . readIORef $ val
 
 applyFn :: Expr -> [Expr] -> IOThrowsError Expr
-applyFn (PrimitiveFn fn) = fn
-applyFn notFn = const $ throwError $ NotCallable notFn
+applyFn (PrimitiveFn fn) args = fn args
+applyFn (LambdaExpr argNames varargs body closure) args
+  | numArgs argNames /= numArgs args = throwError $ FunctionArity (numArgs argNames) args
+  | otherwise = do liftIO $ bindVars (zip argNames args) closure
+                   evaluateSeq closure body
+  where numArgs = toInteger . length
+
+applyFn notFn _ = throwError $ NotCallable notFn
 
 truthy :: Expr -> Bool
 truthy (BooleanExpr False) = False
@@ -94,3 +119,7 @@ truthy _                   = True
 extractInteger :: Expr -> IOThrowsError Integer
 extractInteger (IntegerExpr i) = return i
 extractInteger other = throwError $ TypeError "integer" other
+
+extractSymbol :: Expr -> IOThrowsError String
+extractSymbol (SymbolExpr s) = return s
+extractSymbol other = throwError $ TypeError "symbol" other

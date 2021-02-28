@@ -9,7 +9,7 @@ import Expr
 import Parse
 
 main :: IO ()
-main = runInputT defaultSettings (lift emptyEnv >>= loop)
+main = runInputT defaultSettings (lift primEnv >>= loop)
        where loop :: SymbolTable -> InputT IO ()
              loop env = do
                  minput <- getInputLine ">>> "

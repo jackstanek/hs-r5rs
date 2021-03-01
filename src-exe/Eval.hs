@@ -6,7 +6,6 @@ import Data.Functor
 import Data.IORef
 import Data.List (foldl')
 import qualified Data.Map.Strict as Map
-import Debug.Trace
 
 import Expr
 import Parse
@@ -20,7 +19,11 @@ primEnv = do env <- newIORef Map.empty
                       ("*", ringOp ((*), 1)),
                       ("-", diffQuot (-)),
                       ("/", diffQuot div),
-                      ("=", allEqual)]
+                      ("=", primCmp (==)),
+                      ("<", primCmp (<)),
+                      (">", primCmp (>)),
+                      ("<=", primCmp (<=)),
+                      (">=", primCmp (>=))]
         makePrimitiveFn (name, fn) = (name, PrimitiveFn fn)
         ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
         ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
@@ -33,10 +36,14 @@ primEnv = do env <- newIORef Map.empty
                                       rest' <- mapM extractInteger rest
                                       return $ IntegerExpr $ foldl' op first' rest'
 
-        allEqual [] = return $ BooleanExpr True
-        allEqual (first : rest) = do firstVal <- extractInteger first
-                                     restVals <- mapM extractInteger rest 
-                                     return $ BooleanExpr (all (== firstVal) restVals)
+        primCmp cmp vals@(first:second:rest) = BooleanExpr <$> (mapM extractInteger vals <&> cmpSeq cmp)
+        primCmp _ vals = throwError $ FunctionArity 2 vals
+
+        cmpSeq :: (Ord a) => (a -> a -> Bool) -> [a] -> Bool
+        cmpSeq cmp vals = case vals of
+                            []  -> True
+                            [_] -> True
+                            (first:second:rest) -> (first `cmp` second) && cmpSeq cmp (second:rest)
 
 evaluate :: SymbolTable -> Expr -> IOThrowsError Expr
 evaluate _ val@(IntegerExpr _) = return val
@@ -66,6 +73,15 @@ evaluate env (ListExpr [SymbolExpr "set!", SymbolExpr lval, rval]) =
     do r <- evaluate env rval
        setVar env lval r
        return r
+
+evaluate env (ListExpr (SymbolExpr "list" : elems)) = 
+    mapM (evaluate env) elems <&> ListExpr
+evaluate env (ListExpr [SymbolExpr "cons", first, rest]) =
+    do first' <- evaluate env first
+       rest'  <- evaluate env rest
+       return $ case rest' of
+         ListExpr elems -> ListExpr (first' : elems)
+         other          -> DottedListExpr [first'] other
 
 evaluate env (ListExpr (fn : args)) = do evalFn   <- evaluate env fn
                                          evalArgs <- mapM (evaluate env) args
@@ -126,3 +142,6 @@ extractInteger other = throwError $ TypeError "integer" other
 extractSymbol :: Expr -> IOThrowsError String
 extractSymbol (SymbolExpr s) = return s
 extractSymbol other = throwError $ TypeError "symbol" other
+
+isList (ListExpr _) = True
+isList _            = False

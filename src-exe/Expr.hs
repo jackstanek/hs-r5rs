@@ -30,6 +30,7 @@ instance Show Expr where
          Just v -> " . " ++ show v) ++
       ") ...)"
   show (PrimitiveFn _) = "<primitive>"
+  show (DottedListExpr front last) = "(" ++ unwords (fmap show front) ++ " . " ++ show last ++ ")"
 
 type SymbolTable = IORef (Map.Map String (IORef Expr))
 

@@ -14,7 +14,7 @@ data Expr = IntegerExpr Integer
           | ListExpr [Expr]
           | LambdaExpr {lmArgs :: [String], lmVarargs :: Maybe String,
                         lmBody :: [Expr], lmClosure :: SymbolTable }
-          | DottedList [Expr] Expr
+          | DottedListExpr [Expr] Expr
           | PrimitiveFn ([Expr] -> IOThrowsError Expr)
 
 instance Show Expr where

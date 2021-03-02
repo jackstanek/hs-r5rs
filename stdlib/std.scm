@@ -1,0 +1,5 @@
+(define (map f xs)
+  (if (empty? xs)
+      '()
+      (cons (f (car xs))
+            (map f (cdr xs)))))

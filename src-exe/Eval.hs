@@ -10,11 +10,12 @@ import qualified Data.Map.Strict as Map
 import Expr
 import Parse
 
+emptyEnv :: IO SymbolTable
+emptyEnv = newIORef Map.empty
+
 -- An environment containing only primitives.
 primEnv :: IO SymbolTable
-primEnv = do env <- newIORef Map.empty
-             bindVars (makePrimitiveFn <$> primitives) env
-             return env
+primEnv = emptyEnv >>= bindVars (makePrimitiveFn <$> primitives)
   where primitives = [("+", ringOp ((+), 0)),
                       ("*", ringOp ((*), 1)),
                       ("-", diffQuot (-)),
@@ -62,8 +63,10 @@ loadSourceFile path env = liftIO (readFile path) >>= liftIOThrow . parseProgram 
 loadSourceDefs :: FilePath -> SymbolTable -> IOThrowsError SymbolTable
 loadSourceDefs path env = loadSourceFile path env >> return env
 
-preludeEnv :: IOThrowsError SymbolTable
-preludeEnv = liftIO primEnv >>= loadSourceDefs "stdlib/std.scm"
+preludeEnv :: IO SymbolTable
+preludeEnv = runExceptT (lift primEnv >>= loadSourceDefs "stdlib/std.scm") >>= either stdlibErr return
+  where stdlibErr :: LispError -> IO SymbolTable
+        stdlibErr err = print err >> primEnv
 
 cloneEnv :: SymbolTable -> IO SymbolTable
 cloneEnv env = readIORef env >>= newIORef
@@ -136,12 +139,13 @@ setVar env name val = do env' <- liftIO $ readIORef env
                            Nothing -> throwError $ UnboundVariable name
 
 
-bindVar :: SymbolTable -> String -> Expr -> IO ()
+bindVar :: SymbolTable -> String -> Expr -> IO SymbolTable
 bindVar env name val = do varRef <- newIORef val
                           modifyIORef' env (Map.insert name varRef)
+                          return env
 
-bindVars :: [(String, Expr)] -> SymbolTable -> IO ()
-bindVars bindings env = mapM_ (uncurry $ bindVar env) bindings
+bindVars :: [(String, Expr)] -> SymbolTable -> IO SymbolTable
+bindVars bindings env = mapM_ (uncurry $ bindVar env) bindings >> return env
 
 lookupVar :: SymbolTable -> String -> IOThrowsError Expr
 lookupVar envRef var = do env <- liftIO $ readIORef envRef

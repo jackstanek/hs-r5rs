@@ -1,4 +1,4 @@
-module Eval (SymbolTable, evaluate, evaluateSeq, primEnv) where
+module Eval (SymbolTable, evaluate, evaluateSeq, primEnv, preludeEnv) where
 
 import Control.Monad
 import Control.Monad.Except
@@ -23,7 +23,9 @@ primEnv = do env <- newIORef Map.empty
                       ("<", primCmp (<)),
                       (">", primCmp (>)),
                       ("<=", primCmp (<=)),
-                      (">=", primCmp (>=))]
+                      (">=", primCmp (>=)),
+                      ("symbol->string", symToString),
+                      ("eqv?", eqv)]
         makePrimitiveFn (name, fn) = (name, PrimitiveFn fn)
         ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
         ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
@@ -45,10 +47,34 @@ primEnv = do env <- newIORef Map.empty
                             [_] -> True
                             (first:second:rest) -> (first `cmp` second) && cmpSeq cmp (second:rest)
 
+        symToString :: [Expr] -> IOThrowsError Expr
+        symToString [SymbolExpr sym] = return $ StringExpr sym
+        symToString [nonSym] = throwError $ TypeError "symbol" nonSym
+        symToString args = throwError $ FunctionArity 1 args
+
+        eqv :: [Expr] -> IOThrowsError Expr
+        eqv [BooleanExpr l, BooleanExpr r] = return $ BooleanExpr $ l == r
+        eqv _ = return $ BooleanExpr False
+
+loadSourceFile :: FilePath -> SymbolTable -> IOThrowsError Expr
+loadSourceFile path env = liftIO (readFile path) >>= liftIOThrow . parseProgram path >>= evaluateSeq env
+
+loadSourceDefs :: FilePath -> SymbolTable -> IOThrowsError SymbolTable
+loadSourceDefs path env = loadSourceFile path env >> return env
+
+preludeEnv :: IOThrowsError SymbolTable
+preludeEnv = liftIO primEnv >>= loadSourceDefs "stdlib/std.scm"
+
+cloneEnv :: SymbolTable -> IO SymbolTable
+cloneEnv env = readIORef env >>= newIORef
+
 evaluate :: SymbolTable -> Expr -> IOThrowsError Expr
 evaluate _ val@(IntegerExpr _) = return val
 evaluate _ val@(StringExpr _) = return val
 evaluate _ val@(BooleanExpr _) = return val
+
+evaluate env (ListExpr [SymbolExpr "load", StringExpr path]) = loadSourceFile path env
+
 evaluate _ (ListExpr [SymbolExpr "quote", val]) = return val
 evaluate env (ListExpr [SymbolExpr "if", pred, t, f]) =
     do pred' <- evaluate env pred
@@ -56,13 +82,16 @@ evaluate env (ListExpr [SymbolExpr "if", pred, t, f]) =
 evaluate env badIf@(ListExpr (SymbolExpr "if":_)) = throwError $ BadSpecialForm badIf
 evaluate env (ListExpr (SymbolExpr "lambda" : ListExpr argSyms : body)) =
     do args <- mapM extractSymbol argSyms
+       closure <- liftIO $ cloneEnv env
        return LambdaExpr{lmArgs=args, lmBody=body,
-                         lmVarargs=Nothing, lmClosure=env}
+                         lmVarargs=Nothing, lmClosure=closure}
 evaluate env (ListExpr (SymbolExpr "define" : ListExpr (SymbolExpr fnname : argSyms) : body)) =
     do args <- mapM extractSymbol argSyms
+       closure <- liftIO $ cloneEnv env
        let lm = LambdaExpr{lmArgs=args, lmBody=body,
-                           lmVarargs=Nothing, lmClosure=env}
-       liftIO $ bindVar (lmClosure lm) fnname lm
+                           lmVarargs=Nothing, lmClosure=closure}
+       liftIO $ bindVar env fnname lm
+       liftIO $ bindVar closure fnname lm
        return lm
 evaluate env (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) =
     do r <- evaluate env rval
@@ -74,7 +103,7 @@ evaluate env (ListExpr [SymbolExpr "set!", SymbolExpr lval, rval]) =
        setVar env lval r
        return r
 
-evaluate env (ListExpr (SymbolExpr "list" : elems)) = 
+evaluate env (ListExpr (SymbolExpr "list" : elems)) =
     mapM (evaluate env) elems <&> ListExpr
 evaluate env (ListExpr [SymbolExpr "cons", first, rest]) =
     do first' <- evaluate env first

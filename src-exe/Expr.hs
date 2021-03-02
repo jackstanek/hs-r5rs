@@ -32,6 +32,11 @@ instance Show Expr where
   show (PrimitiveFn _) = "<primitive>"
   show (DottedListExpr front last) = "(" ++ unwords (fmap show front) ++ " . " ++ show last ++ ")"
 
+instance Eq Expr where
+  IntegerExpr l == IntegerExpr r = l == r
+  BooleanExpr l == BooleanExpr r = l == r
+  _             == _             = False
+
 type SymbolTable = IORef (Map.Map String (IORef Expr))
 
 data LispError = TypeError String Expr

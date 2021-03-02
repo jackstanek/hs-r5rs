@@ -54,8 +54,16 @@ primEnv = emptyEnv >>= bindVars (makePrimitiveFn <$> primitives)
         symToString args = throwError $ FunctionArity 1 args
 
         eqv :: [Expr] -> IOThrowsError Expr
-        eqv [BooleanExpr l, BooleanExpr r] = return $ BooleanExpr $ l == r
-        eqv _ = return $ BooleanExpr False
+        eqv args = if length args /= 2
+                     then throwError $ FunctionArity 2 args
+                     else return $ BooleanExpr result
+                     where result = case args of
+                                      [BooleanExpr l, BooleanExpr r] -> l == r
+                                      [StringExpr  l, StringExpr  r] -> l == r
+                                      [SymbolExpr  l, SymbolExpr  r] -> l == r
+                                      [IntegerExpr l, IntegerExpr r] -> l == r
+                                      [ListExpr   [], ListExpr   []] -> True
+                                      _ -> False
 
 loadSourceFile :: FilePath -> SymbolTable -> IOThrowsError Expr
 loadSourceFile path env = liftIO (readFile path) >>= liftIOThrow . parseProgram path >>= evaluateSeq env
@@ -98,7 +106,7 @@ evaluate env (ListExpr (SymbolExpr "define" : ListExpr (SymbolExpr fnname : argS
        return lm
 evaluate env (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) =
     do r <- evaluate env rval
-       liftIO $ bindVar env lval rval
+       liftIO $ bindVar env lval r
        return r -- note: this behavior is unspecified and
                 -- implementation-specific.
 evaluate env (ListExpr [SymbolExpr "set!", SymbolExpr lval, rval]) =

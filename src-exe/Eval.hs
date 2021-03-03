@@ -26,7 +26,9 @@ primEnv = emptyEnv >>= bindVars (makePrimitiveFn <$> primitives)
                       ("<=", primCmp (<=)),
                       (">=", primCmp (>=)),
                       ("symbol->string", symToString),
-                      ("eqv?", eqv)]
+                      ("eqv?", eqv),
+                      ("car", car),
+                      ("cdr", cdr)]
         makePrimitiveFn (name, fn) = (name, PrimitiveFn fn)
         ringOp :: (Integer -> Integer -> Integer, Integer) -> [Expr] -> IOThrowsError Expr
         ringOp (op, identity) args = mapM extractInteger args <&> (IntegerExpr . foldl' op identity)
@@ -65,6 +67,18 @@ primEnv = emptyEnv >>= bindVars (makePrimitiveFn <$> primitives)
                                       [ListExpr   [], ListExpr   []] -> True
                                       _ -> False
 
+        car :: [Expr] -> IOThrowsError Expr
+        car [ListExpr (head:_)] = return head
+        car [ListExpr []] = throwError $ BadSpecialForm "cannot take car of empty list"
+        car [DottedListExpr (head:_) _] = return head
+        car [nonList] = throwError $ TypeError "list" nonList
+
+        cdr :: [Expr] -> IOThrowsError Expr
+        cdr [ListExpr (_:tail)] = return $ ListExpr tail
+        cdr [ListExpr []] = throwError $ BadSpecialForm "cannot take cdr of empty list"
+        cdr [DottedListExpr (_:tail) final] = return . ListExpr $ tail ++ [final]
+        cdr [nonList] = throwError $ TypeError "list" nonList
+
 loadSourceFile :: FilePath -> SymbolTable -> IOThrowsError Expr
 loadSourceFile path env = liftIO (readFile path) >>= liftIOThrow . parseProgram path >>= evaluateSeq env
 
@@ -90,7 +104,7 @@ evaluate _ (ListExpr [SymbolExpr "quote", val]) = return val
 evaluate env (ListExpr [SymbolExpr "if", pred, t, f]) =
     do pred' <- evaluate env pred
        evaluate env (if truthy pred' then t else f)
-evaluate env badIf@(ListExpr (SymbolExpr "if":_)) = throwError $ BadSpecialForm badIf
+evaluate env (ListExpr (SymbolExpr "if":_)) = throwError $ BadSpecialForm "malformed if expression"
 evaluate env (ListExpr (SymbolExpr "lambda" : ListExpr argSyms : body)) =
     do args <- mapM extractSymbol argSyms
        closure <- liftIO $ cloneEnv env
@@ -129,7 +143,7 @@ evaluate env (ListExpr (fn : args)) = do evalFn   <- evaluate env fn
 evaluate env (SymbolExpr var) = lookupVar env var
 evaluate _ lm@LambdaExpr{} = return lm
 evaluate _ prim@(PrimitiveFn _) = return prim
-evaluate _ bad = throwError $ BadSpecialForm bad
+evaluate _ _ = throwError $ BadSpecialForm "malformed expression"
 
 -- Evaluate a sequence of expressions in the same environment
 evaluateSeq :: SymbolTable -> [Expr] -> IOThrowsError Expr

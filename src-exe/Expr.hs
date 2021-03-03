@@ -32,18 +32,13 @@ instance Show Expr where
   show (PrimitiveFn _) = "<primitive>"
   show (DottedListExpr front last) = "(" ++ unwords (fmap show front) ++ " . " ++ show last ++ ")"
 
-instance Eq Expr where
-  IntegerExpr l == IntegerExpr r = l == r
-  BooleanExpr l == BooleanExpr r = l == r
-  _             == _             = False
-
 type SymbolTable = IORef (Map.Map String (IORef Expr))
 
 data LispError = TypeError String Expr
                | ParserError ParseError
                | FunctionArity Integer [Expr]
                | NotCallable Expr
-               | BadSpecialForm Expr
+               | BadSpecialForm String
                | UnboundVariable String
                | DivideByZero
                | EmptyProgram
@@ -53,7 +48,7 @@ instance Show LispError where
   show (ParserError pe) = show pe
   show (FunctionArity n exprs) = "function expected " ++ show n ++ " arguments, but got: " ++ unwords (fmap show exprs)
   show (NotCallable e) = show e ++ " is not callable"
-  show (BadSpecialForm e) = "bad special form: " ++ show e
+  show (BadSpecialForm e) = "bad special form: " ++ e
   show (UnboundVariable v) = "unbound variable: " ++ v
   show DivideByZero = "divide by zero"
   show EmptyProgram = "empty program or function body"

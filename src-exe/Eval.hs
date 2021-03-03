@@ -179,8 +179,9 @@ applyFn :: Expr -> [Expr] -> IOThrowsError Expr
 applyFn (PrimitiveFn fn) args = fn args
 applyFn (LambdaExpr argNames varargs body closure) args
   | numArgs argNames /= numArgs args = throwError $ FunctionArity (numArgs argNames) args
-  | otherwise = do liftIO $ bindVars (zip argNames args) closure
-                   evaluateSeq closure body
+  | otherwise = do scratch <- liftIO $ cloneEnv closure
+                   liftIO $ bindVars (zip argNames args) scratch
+                   evaluateSeq scratch body
 
   where numArgs = toInteger . length
 

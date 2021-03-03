@@ -43,3 +43,8 @@
       (if (f (car xs))
           (cons (car xs) (filter f (cdr xs)))
           (filter f (cdr xs)))))
+
+(define (reduce f i xs)
+  (if (null? xs)
+      i
+      (reduce f (f i (car xs)) (cdr xs))))

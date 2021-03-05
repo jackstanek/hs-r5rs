@@ -11,9 +11,9 @@ Parts of this codebase are inspired by the fantastic "[Write Yourself a Scheme
 in 48 Hours](https://en.wikibooks.org/wiki/Write_Yourself_a_Scheme_in_48_Hours)."
 
 ## Features
- - [ ] Fundamental Scheme types (i.e. integers, symbols, booleans, etc.)
+ - [x] Fundamental Scheme types (i.e. integers, symbols, booleans, etc.)
  - [x] Variables
- - [ ] Lambda expressions
+ - [x] Lambda expressions
  - [ ] Tail-call optimization
  - [ ] `call/cc`
 

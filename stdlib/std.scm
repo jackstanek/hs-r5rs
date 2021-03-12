@@ -48,3 +48,21 @@
   (if (null? xs)
       i
       (reduce f (f i (car xs)) (cdr xs))))
+
+(define (list-tail l k)
+  (if (eqv? k 0)
+      l
+      (list-tail (cdr l) (- k 1))))
+
+(define (memv m l)
+  (if (null? l)
+      #f
+      (if (eqv? m (car l))
+          l
+          (memv m (cdr l)))))
+
+(define (member m l)
+  (if (null? l)
+      #f
+      (or (equal? m (car l))
+          (member m (cdr l)))))

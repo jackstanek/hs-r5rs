@@ -93,6 +93,12 @@ preludeEnv = runExceptT (lift primEnv >>= loadSourceDefs "stdlib/std.scm") >>= e
 cloneEnv :: SymbolTable -> IO SymbolTable
 cloneEnv env = readIORef env >>= newIORef
 
+makeFn :: SymbolTable -> [Expr] -> [Expr] -> IOThrowsError Expr
+makeFn env argSyms body = do args <- mapM extractSymbol argSyms
+                             closure <- liftIO $ cloneEnv env
+                             return LambdaExpr{lmArgs=args, lmBody=body,
+                                               lmVarargs=Nothing, lmClosure=closure}
+
 evaluate :: SymbolTable -> Expr -> IOThrowsError Expr
 evaluate _ val@(IntegerExpr _) = return val
 evaluate _ val@(StringExpr _) = return val
@@ -105,19 +111,14 @@ evaluate env (ListExpr [SymbolExpr "if", pred, t, f]) =
     do pred' <- evaluate env pred
        evaluate env (if truthy pred' then t else f)
 evaluate env (ListExpr (SymbolExpr "if":_)) = throwError $ BadSpecialForm "malformed if expression"
-evaluate env (ListExpr (SymbolExpr "lambda" : ListExpr argSyms : body)) =
-    do args <- mapM extractSymbol argSyms
-       closure <- liftIO $ cloneEnv env
-       return LambdaExpr{lmArgs=args, lmBody=body,
-                         lmVarargs=Nothing, lmClosure=closure}
+
+evaluate env (ListExpr (SymbolExpr "lambda" : ListExpr argSyms : body)) = makeFn env argSyms body
 evaluate env (ListExpr (SymbolExpr "define" : ListExpr (SymbolExpr fnname : argSyms) : body)) =
-    do args <- mapM extractSymbol argSyms
-       closure <- liftIO $ cloneEnv env
-       let lm = LambdaExpr{lmArgs=args, lmBody=body,
-                           lmVarargs=Nothing, lmClosure=closure}
+    do lm <- makeFn env argSyms body
+       liftIO $ bindVar (lmClosure lm) fnname lm
        liftIO $ bindVar env fnname lm
-       liftIO $ bindVar closure fnname lm
        return lm
+
 evaluate env (ListExpr [SymbolExpr "define", SymbolExpr lval, rval]) =
     do r <- evaluate env rval
        liftIO $ bindVar env lval r
